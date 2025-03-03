@@ -252,33 +252,44 @@ def load_game():
         return "No save file found."
 
 ############################
-# Command Parser
+# Updated Command Parser with Natural Language Support
 ############################
 
 def parse_command(user_input):
+    """
+    Parse a natural language command by checking if any synonym is present in the input.
+    Specific multi-word cases (like "read map" or "take map") are handled first.
+    """
+    user_input = user_input.lower().strip()
     if not user_input:
         return ""
-    commands = {
-        "look": ["look", "examine", "view"],
-        "sail": ["sail", "navigate", "set course"],
-        "board": ["board", "enter"],
-        "search": ["search", "read", "investigate"],
-        "fight": ["fight", "attack", "duel"],
-        "negotiate": ["negotiate", "talk", "parley"],
-        "unlock": ["unlock", "open"],
-        "map": ["map", "show map"],
-        "journal": ["journal", "codex"],
-        "help": ["help", "commands"],
-        "quit": ["quit", "exit"],
-        "save": ["save"],
-        "load": ["load"]
-    }
-    for cmd, synonyms in commands.items():
+    
+    # Handle special multi-word commands explicitly.
+    if "read map" in user_input or "take map" in user_input:
+        return "map"
+    
+    # Define an ordered list of commands by priority.
+    ordered_commands = [
+        ("map", ["map", "show map"]),
+        ("journal", ["journal", "codex"]),
+        ("look", ["look", "examine", "view"]),
+        ("sail", ["sail", "navigate", "set course"]),
+        ("board", ["board", "enter"]),
+        ("search", ["search", "investigate", "read"]),  # Note: "read" might be ambiguous, but after "map" it is lower priority.
+        ("fight", ["fight", "attack", "duel"]),
+        ("negotiate", ["negotiate", "talk", "parley"]),
+        ("unlock", ["unlock", "open"]),
+        ("help", ["help", "commands"]),
+        ("quit", ["quit", "exit"]),
+        ("save", ["save"]),
+        ("load", ["load"])
+    ]
+    for command, synonyms in ordered_commands:
         for synonym in synonyms:
-            if user_input.startswith(synonym):
-                return cmd
-    parts = user_input.split()
-    return parts[0] if parts else ""
+            if synonym in user_input:
+                return command
+    # Fallback: return the first word
+    return user_input.split()[0]
 
 ############################
 # In-Game Journal Functions
@@ -315,7 +326,7 @@ def scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win):
     
     while True:
         user_input = curses_get_input(input_win)
-        cmd = parse_command(user_input.lower().strip())
+        cmd = parse_command(user_input)
         if cmd == "look":
             curses_slow_print(main_win, "You see a bustling deck with crew members and a mysterious map.")
         elif cmd == "sail":
@@ -355,7 +366,7 @@ def scene_below_deck(header_win, main_win, sidebar_win, input_win, footer_win):
     
     while True:
         user_input = curses_get_input(input_win)
-        cmd = parse_command(user_input.lower().strip())
+        cmd = parse_command(user_input)
         if cmd == "look":
             curses_slow_print(main_win, "The journal details hidden coves and mysterious symbols.")
         elif cmd == "search":
@@ -396,7 +407,7 @@ def scene_open_sea(header_win, main_win, sidebar_win, input_win, footer_win):
     
     while True:
         user_input = curses_get_input(input_win)
-        cmd = parse_command(user_input.lower().strip())
+        cmd = parse_command(user_input)
         if cmd == "look":
             curses_slow_print(main_win, "Turbulent waves and flashes of lightning mirror your inner turmoil.")
         elif cmd == "sail":
@@ -432,7 +443,7 @@ def scene_storm_at_sea(header_win, main_win, sidebar_win, input_win, footer_win)
     
     while True:
         user_input = curses_get_input(input_win)
-        cmd = parse_command(user_input.lower().strip())
+        cmd = parse_command(user_input)
         if cmd == "look":
             curses_slow_print(main_win, "The deck is slippery and the crew scrambles in the tempest.")
         elif cmd == "fight":
@@ -481,7 +492,7 @@ def scene_island_approach(header_win, main_win, sidebar_win, input_win, footer_w
     
     while True:
         user_input = curses_get_input(input_win)
-        cmd = parse_command(user_input.lower().strip())
+        cmd = parse_command(user_input)
         if cmd == "look":
             curses_slow_print(main_win, "From the deck, you see cannons, watchtowers, and secret coves carved into the rocks.")
         elif cmd == "board":
@@ -681,6 +692,7 @@ class TestCommandParser(unittest.TestCase):
         self.assertEqual(parse_command("enter cabin"), "board")
     
     def test_search_commands(self):
+        # "read journal" should be interpreted as search, unless map commands override.
         self.assertEqual(parse_command("search for clues"), "search")
         self.assertEqual(parse_command("read journal"), "search")
     
@@ -699,6 +711,9 @@ class TestCommandParser(unittest.TestCase):
     def test_map_commands(self):
         self.assertEqual(parse_command("map"), "map")
         self.assertEqual(parse_command("show map please"), "map")
+        self.assertEqual(parse_command("read map"), "map")
+        self.assertEqual(parse_command("take map"), "map")
+        self.assertEqual(parse_command("I want to see the map"), "map")
     
     def test_journal_commands(self):
         self.assertEqual(parse_command("journal"), "journal")
@@ -719,7 +734,6 @@ class TestCommandParser(unittest.TestCase):
         self.assertEqual(parse_command("load game"), "load")
     
     def test_unknown_command(self):
-        # Should return the first word if not recognized.
         self.assertEqual(parse_command("foobar test"), "foobar")
 
 class TestJournalFunctions(unittest.TestCase):
