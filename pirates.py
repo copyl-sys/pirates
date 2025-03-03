@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-Pirate Latitudes: Ultimate Curses Enhanced Epic Adventure with ASCII Movies
+Pirate Latitudes: Ultimate Curses Enhanced Epic Adventure with ASCII Movies and Extended UI
 Inspired by *Pirate Latitudes* by Michael Crichton.
 All rights to the original text and story belong to Michael Crichton and his estate.
 
-This version extends the curses UI to include an ASCII intro movie and an ending ASCII movie.
+This version uses curses to provide:
+  - A full-screen ASCII intro movie.
+  - A full-screen main menu.
+  - A multi-panel UI (header, main, sidebar, input, footer) for gameplay.
+  - An ASCII ending movie.
 """
 
 import curses
@@ -66,7 +70,7 @@ def update_header(header_win):
 def update_footer(footer_win):
     """Update the footer bar (for hints or extra info)."""
     footer_win.clear()
-    footer_win.addstr(0, 2, "Type 'help' for commands. ")
+    footer_win.addstr(0, 2, "Type 'help' for commands.")
     footer_win.refresh()
 
 def update_sidebar(sidebar_win):
@@ -89,7 +93,7 @@ def update_sidebar(sidebar_win):
     sidebar_win.refresh()
 
 def curses_slow_print(win, text, delay=0.05):
-    """Print text to the given window slowly (character-by-character)."""
+    """Print text slowly (character-by-character) in the given window."""
     for ch in text:
         win.addstr(ch)
         win.refresh()
@@ -98,7 +102,7 @@ def curses_slow_print(win, text, delay=0.05):
     win.refresh()
 
 def curses_get_input(win, prompt=">> "):
-    """Display a prompt in the input window and return the user's input."""
+    """Clear the input window, display a prompt, and get user input."""
     win.clear()
     win.addstr(0, 0, prompt)
     win.refresh()
@@ -156,7 +160,11 @@ r"""
         start_y = (height - len(lines)) // 2
         for i, line in enumerate(lines):
             x = max((width - len(line)) // 2, 0)
-            stdscr.addstr(start_y + i, x, line)
+            try:
+                stdscr.addstr(start_y + i, x, line)
+            except curses.error:
+                # In case the terminal is too small, ignore the error.
+                pass
         stdscr.refresh()
         time.sleep(2)
     stdscr.clear()
@@ -198,11 +206,17 @@ r"""
         start_y = (height - len(lines)) // 2
         for i, line in enumerate(lines):
             x = max((width - len(line)) // 2, 0)
-            stdscr.addstr(start_y + i, x, line)
+            try:
+                stdscr.addstr(start_y + i, x, line)
+            except curses.error:
+                pass
         stdscr.refresh()
         time.sleep(2)
     stdscr.clear()
-    stdscr.addstr(height//2, (width-20)//2, "Thank you for playing!")
+    try:
+        stdscr.addstr(height//2, (width-20)//2, "Thank you for playing!")
+    except curses.error:
+        pass
     stdscr.refresh()
     time.sleep(3)
 
@@ -462,6 +476,7 @@ def scene_island_approach(header_win, main_win, sidebar_win, input_win, footer_w
             curses_slow_print(main_win, "From the deck, you see cannons, watchtowers, and secret coves carved into the rocks.")
         elif cmd == "board":
             curses_slow_print(main_win, "You lower the boats and prepare a landing party.")
+            # For demonstration, return to ship deck after island approach.
             scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win)
             break
         elif cmd == "map":
@@ -510,6 +525,42 @@ def display_help_menu(main_win, input_win):
     input_win.getch()
 
 ############################
+# Character Customization
+############################
+
+def character_customization(stdscr):
+    stdscr.clear()
+    curses.curs_set(1)
+    curses.echo()
+    stdscr.addstr(2, 2, "Enter your pirate name: ")
+    name = stdscr.getstr().decode("utf-8").strip()
+    if name:
+        game_state["name"] = name
+    else:
+        game_state["name"] = "Captain Anonymous"
+    stdscr.addstr(4, 2, f"Welcome, {game_state['name']}!")
+    stdscr.addstr(6, 2, "Allocate 10 skill points among Combat, Negotiation, and Puzzle skills (e.g., 4 3 3): ")
+    while True:
+        try:
+            points = stdscr.getstr().decode("utf-8").strip().split()
+            points = list(map(int, points))
+            if len(points) != 3 or sum(points) != 10:
+                stdscr.addstr(8, 2, "Please allocate exactly 10 points. Try again: ")
+                stdscr.clrtoeol()
+                continue
+            game_state["skills"]["combat"] = points[0]
+            game_state["skills"]["negotiation"] = points[1]
+            game_state["skills"]["puzzle"] = points[2]
+            break
+        except Exception:
+            stdscr.addstr(8, 2, "Invalid input. Try again: ")
+            stdscr.clrtoeol()
+    curses.noecho()
+    add_event(f"Character created: {game_state['name']} with skills {game_state['skills']}")
+    stdscr.addstr(10, 2, "Press any key to continue...")
+    stdscr.getch()
+
+############################
 # Main Curses Function
 ############################
 
@@ -520,59 +571,81 @@ def curses_main(stdscr):
     # Show ASCII Intro Movie
     ascii_intro_movie(stdscr)
     
-    header_win, main_win, sidebar_win, input_win, footer_win = init_windows(stdscr)
-    
+    # Display the full-screen main menu using stdscr
+    stdscr.clear()
+    height, width = stdscr.getmaxyx()
+    menu_items = ["New Game", "Load Game", "Help", "Quit"]
+    current_selection = 0
     while True:
-        # Main Menu Loop
-        header_win.clear()
-        main_menu_items = ["New Game", "Load Game", "Help", "Quit"]
-        selection = 0
-        while True:
-            header_win.clear()
-            height, width = header_win.getmaxyx()
-            title = "Pirate Latitudes: Ultimate Epic Adventure"
-            header_win.addstr(0, (width - len(title)) // 2, title, curses.A_BOLD)
-            for idx, item in enumerate(main_menu_items):
-                x = (width - len(item)) // 2
-                y = 1 + idx
-                if idx == selection:
-                    header_win.attron(curses.A_REVERSE)
-                    header_win.addstr(y, x, item)
-                    header_win.attroff(curses.A_REVERSE)
-                else:
-                    header_win.addstr(y, x, item)
-            header_win.refresh()
-            key = stdscr.getch()
-            if key == curses.KEY_UP:
-                selection = (selection - 1) % len(main_menu_items)
-            elif key == curses.KEY_DOWN:
-                selection = (selection + 1) % len(main_menu_items)
-            elif key in [10, 13]:
-                break
-
-        choice = main_menu_items[selection]
-        if choice == "New Game":
-            # Character customization then start at ship deck
-            character_customization(stdscr)
-            scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win)
-        elif choice == "Load Game":
-            msg = load_game()
-            main_win.clear()
-            curses_slow_print(main_win, msg)
-            main_win.addstr("\nPress any key to continue...")
-            main_win.refresh()
-            main_win.getch()
-            scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win)
-        elif choice == "Help":
-            display_help_menu(main_win, input_win)
-        elif choice == "Quit":
-            main_win.clear()
-            main_win.addstr("Farewell, brave pirate!\n")
-            main_win.refresh()
-            time.sleep(2)
+        stdscr.clear()
+        title = "Pirate Latitudes: Ultimate Epic Adventure"
+        stdscr.addstr(2, (width - len(title)) // 2, title, curses.A_BOLD)
+        for idx, item in enumerate(menu_items):
+            x = (width - len(item)) // 2
+            y = 4 + idx
+            if idx == current_selection:
+                stdscr.attron(curses.A_REVERSE)
+                stdscr.addstr(y, x, item)
+                stdscr.attroff(curses.A_REVERSE)
+            else:
+                stdscr.addstr(y, x, item)
+        stdscr.refresh()
+        key = stdscr.getch()
+        if key == curses.KEY_UP:
+            current_selection = (current_selection - 1) % len(menu_items)
+        elif key == curses.KEY_DOWN:
+            current_selection = (current_selection + 1) % len(menu_items)
+        elif key in [10, 13]:
             break
 
-    # After game loop, show the ending movie.
+    choice = menu_items[current_selection]
+    if choice == "New Game":
+        character_customization(stdscr)
+    elif choice == "Load Game":
+        msg = load_game()
+        stdscr.clear()
+        stdscr.addstr(2, 2, msg)
+        stdscr.addstr(4, 2, "Press any key to continue...")
+        stdscr.refresh()
+        stdscr.getch()
+    elif choice == "Help":
+        help_text = (
+            "Help / Commands:\n"
+            "  look/examine/view      - Observe your surroundings\n"
+            "  sail/navigate/set course - Set sail to a new destination\n"
+            "  board/enter             - Board a ship or enter a location\n"
+            "  search/read/investigate - Look for clues or treasure\n"
+            "  fight/attack/duel       - Engage in battle\n"
+            "  negotiate/talk/parley   - Parley with others\n"
+            "  unlock/open             - Open a locked door\n"
+            "  map/show map            - Display the ASCII map\n"
+            "  journal/codex           - Show your in-game journal\n"
+            "  save                    - Save your progress\n"
+            "  load                    - Load your progress\n"
+            "  help/commands           - Show this help menu\n"
+            "  quit/exit               - Exit the adventure\n\n"
+            "Press any key to return..."
+        )
+        stdscr.clear()
+        stdscr.addstr(2, 2, help_text)
+        stdscr.refresh()
+        stdscr.getch()
+    elif choice == "Quit":
+        stdscr.clear()
+        stdscr.addstr(height//2, (width-20)//2, "Farewell, brave pirate!")
+        stdscr.refresh()
+        time.sleep(2)
+        return
+
+    # After main menu, initialize game windows
+    header_win, main_win, sidebar_win, input_win, footer_win = init_windows(stdscr)
+    
+    # Start the game at the ship deck
+    scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win)
+    
+    # (Game loop continues with your scenes here...)
+    
+    # When the game ends, show the ASCII Ending Movie.
     ascii_ending_movie(stdscr)
 
 if __name__ == "__main__":
