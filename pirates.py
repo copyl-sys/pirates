@@ -1,421 +1,579 @@
 #!/usr/bin/env python3
 """
-Pirate Latitudes: A Reimagined Epic Adventure
+Pirate Latitudes: Ultimate Curses Enhanced Epic Adventure with ASCII Movies
 Inspired by *Pirate Latitudes* by Michael Crichton.
 All rights to the original text and story belong to Michael Crichton and his estate.
 
-This interactive text adventure combines a choose‐your‐own‐adventure narrative with a Zork-style command input.
-With multiple branches, puzzles, and encounters, this experience is designed to fill over two hours of gameplay.
+This version extends the curses UI to include an ASCII intro movie and an ending ASCII movie.
 """
 
-import sys
+import curses
 import time
+import json
+import os
+import random
+import signal
 
-def pause():
-    """Small pause to enhance dramatic effect."""
-    time.sleep(1.5)
+SAVE_FILE = "pirate_latitudes_save.json"
 
-def slow_print(text):
-    """Print text with a slight delay for atmosphere."""
-    for line in text.split("\n"):
-        print(line)
-        time.sleep(1)
-    print()
+# Global game state
+game_state = {
+    "current_scene": "intro",
+    "name": "Captain Anonymous",
+    "inventory": [],
+    "health": 100,
+    "skills": {"combat": 5, "negotiation": 3, "puzzle": 4},
+    "reputation": 0,
+    "achievements": [],
+    "story_log": []
+}
 
-def show_intro():
-    slow_print(r"""
-     ____  _                 _       _       _      _       
-    |  _ \| | __ _ _ __   __| | ___ | |__   | |    / \   ___ ___ ___
-    | |_) | |/ _` | '_ \ / _` |/ _ \| '_ \  | |   / _ \ / __/ __/ _ \
-    |  __/| | (_| | | | | (_| | (_) | |_) | | |  / ___ \ (_| (_|  __/
-    |_|   |_|\__,_|_| |_|\__,_|\___/|_.__/  |_| /_/   \_\___\___\___/
+############################
+# Curses UI Layout Setup
+############################
 
-    Welcome, daring adventurer, to a reimagined journey of piracy and mystery!
+def init_windows(stdscr):
+    """Divide the screen into header, main, sidebar, input, and footer windows."""
+    height, width = stdscr.getmaxyx()
     
-    Inspired by Michael Crichton’s *Pirate Latitudes*, this epic adventure plunges you
-    into a world of swashbuckling intrigue, secret islands, and hidden treasures.
+    header_height = 3
+    input_height = 3
+    footer_height = 1
+    sidebar_width = 40
+
+    main_height = height - header_height - input_height - footer_height
+    main_width = width - sidebar_width
+
+    header_win = curses.newwin(header_height, width, 0, 0)
+    main_win = curses.newwin(main_height, main_width, header_height, 0)
+    sidebar_win = curses.newwin(main_height, sidebar_width, header_height, main_width)
+    input_win = curses.newwin(input_height, width, header_height + main_height, 0)
+    footer_win = curses.newwin(footer_height, width, height - footer_height, 0)
+
+    main_win.scrollok(True)
+    return header_win, main_win, sidebar_win, input_win, footer_win
+
+def update_header(header_win):
+    """Update the header bar with game title and status info."""
+    header_win.clear()
+    title = "Pirate Latitudes: Ultimate Epic Adventure"
+    status = f"Health: {game_state['health']}  Reputation: {game_state['reputation']}"
+    header_win.addstr(0, 2, title, curses.A_BOLD)
+    header_win.addstr(1, 2, status)
+    header_win.hline(2, 0, curses.ACS_HLINE, header_win.getmaxyx()[1])
+    header_win.refresh()
+
+def update_footer(footer_win):
+    """Update the footer bar (for hints or extra info)."""
+    footer_win.clear()
+    footer_win.addstr(0, 2, "Type 'help' for commands. ")
+    footer_win.refresh()
+
+def update_sidebar(sidebar_win):
+    """Display an ASCII map in the sidebar window."""
+    sidebar_win.clear()
+    ascii_map = (
+        " ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n"
+        " |         SEA OF MYSTERY        |\n"
+        " |   [Ship Deck] --- [Open Sea]    |\n"
+        " |         |                     |\n"
+        " |   [Below Deck] --- [Crew Qtrs]  |\n"
+        " |                             |\n"
+        " |  [Island Approach] --- [Jungle]|\n"
+        " |                             |\n"
+        " |   [Fortress] --- [Treasure]   |\n"
+        " ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n"
+    )
+    sidebar_win.addstr(0, 0, ascii_map)
+    sidebar_win.box()
+    sidebar_win.refresh()
+
+def curses_slow_print(win, text, delay=0.05):
+    """Print text to the given window slowly (character-by-character)."""
+    for ch in text:
+        win.addstr(ch)
+        win.refresh()
+        time.sleep(delay)
+    win.addstr("\n")
+    win.refresh()
+
+def curses_get_input(win, prompt=">> "):
+    """Display a prompt in the input window and return the user's input."""
+    win.clear()
+    win.addstr(0, 0, prompt)
+    win.refresh()
+    curses.echo()
+    inp = win.getstr().decode("utf-8")
+    curses.noecho()
+    return inp.strip()
+
+############################
+# ASCII Intro Movie
+############################
+
+def ascii_intro_movie(stdscr):
+    """Display a series of ASCII art frames as an intro movie."""
+    frames = [
+r"""
+   _____  _           _        _      _ 
+  |  __ \| |         | |      | |    | |
+  | |__) | |__   __ _| |_ __ _| | ___| |
+  |  ___/| '_ \ / _` | __/ _` | |/ _ \ |
+  | |    | | | | (_| | || (_| | |  __/_|
+  |_|    |_| |_|\__,_|\__\__,_|_|\___(_)
+
+         ~  ~  ~  ~  ~  ~  ~  ~  ~  ~ 
+       ~       PIRATE LATITUDES        ~
+         ~  ~  ~  ~  ~  ~  ~  ~  ~  ~ 
+""",
+r"""
+         _________
+        /         \
+       /  PIRATE   \
+      |  LATITUDES  |
+       \           /
+        \_________/
     
-    All rights to the original work belong to Michael Crichton and his estate.
-    Prepare to carve your legend upon the digital seas and through forgotten isles.
-    """)
-    print("Type 'help' at any time to see the available commands.\n")
-    pause()
+         ~  ~  ~  ~  ~  ~ 
+       ~  Welcome Aboard  ~
+         ~  ~  ~  ~  ~  ~ 
+""",
+r"""
+              |    |    |
+             )_)  )_)  )_)
+            )___))___))___)\
+           )____)____)_____)\\
+         _____|____|____|____\\\__
+---------\                   /---------
+  ^^^^^ ^^^^^^^^^^^^^^^^^^^^^
+"""
+    ]
+    stdscr.clear()
+    height, width = stdscr.getmaxyx()
+    for frame in frames:
+        stdscr.clear()
+        lines = frame.splitlines()
+        start_y = (height - len(lines)) // 2
+        for i, line in enumerate(lines):
+            x = max((width - len(line)) // 2, 0)
+            stdscr.addstr(start_y + i, x, line)
+        stdscr.refresh()
+        time.sleep(2)
+    stdscr.clear()
+    stdscr.refresh()
 
+############################
+# ASCII Ending Movie
+############################
 
-def help_menu():
-    print("\nAvailable commands:")
-    print("  look            - Observe your surroundings")
-    print("  examine         - Get more details about an object or location")
-    print("  north/south/east/west - Move in a direction")
-    print("  sail            - Set sail to a new destination")
-    print("  board           - Board a ship or enter a location")
-    print("  search/read     - Look for clues or treasure")
-    print("  fight           - Engage in battle")
-    print("  negotiate       - Attempt to parley with others")
-    print("  unlock          - Try to open a locked object or passage")
-    print("  help            - Show this help menu")
-    print("  quit            - Exit the adventure\n")
+def ascii_ending_movie(stdscr):
+    """Display a series of ASCII art frames as an ending movie."""
+    frames = [
+r"""
+          _______
+         /       \
+        |  THE    |
+        |  END    |
+         \_______/
+""",
+r"""
+        ~~~~~~~~~~~~~~~~~~~~
+       ~   Farewell, brave   ~
+       ~       pirate!       ~
+        ~~~~~~~~~~~~~~~~~~~~
+""",
+r"""
+        ~  ~  ~  ~  ~  ~  ~  ~
+     ~                       ~
+   ~  THE JOURNEY LIVES ON!    ~
+     ~                       ~
+        ~  ~  ~  ~  ~  ~  ~  ~
+"""
+    ]
+    stdscr.clear()
+    height, width = stdscr.getmaxyx()
+    for frame in frames:
+        stdscr.clear()
+        lines = frame.splitlines()
+        start_y = (height - len(lines)) // 2
+        for i, line in enumerate(lines):
+            x = max((width - len(line)) // 2, 0)
+            stdscr.addstr(start_y + i, x, line)
+        stdscr.refresh()
+        time.sleep(2)
+    stdscr.clear()
+    stdscr.addstr(height//2, (width-20)//2, "Thank you for playing!")
+    stdscr.refresh()
+    time.sleep(3)
 
+############################
+# Save/Load Functions
+############################
 
-def scene_ship_deck():
-    slow_print("\n--- The Ship's Deck ---")
-    slow_print("You stand on the weather-beaten deck of the pirate ship 'The Black Meridian.'")
-    slow_print("The salty air and creaking wood recall tales of daring escapades and lost treasure.")
-    slow_print("A tattered map and a captain's log rest on a barrel near the helm, hinting at secrets of a hidden island fortress.")
+def save_game():
+    try:
+        with open(SAVE_FILE, "w") as f:
+            json.dump(game_state, f)
+        return "Game saved successfully!"
+    except Exception as e:
+        return f"Failed to save game: {e}"
+
+def load_game():
+    global game_state
+    if os.path.exists(SAVE_FILE):
+        try:
+            with open(SAVE_FILE, "r") as f:
+                game_state = json.load(f)
+            return "Game loaded successfully!"
+        except Exception as e:
+            return f"Failed to load game: {e}"
+    else:
+        return "No save file found."
+
+############################
+# Command Parser
+############################
+
+def parse_command(user_input):
+    commands = {
+        "look": ["look", "examine", "view"],
+        "sail": ["sail", "navigate", "set course"],
+        "board": ["board", "enter"],
+        "search": ["search", "read", "investigate"],
+        "fight": ["fight", "attack", "duel"],
+        "negotiate": ["negotiate", "talk", "parley"],
+        "unlock": ["unlock", "open"],
+        "map": ["map", "show map"],
+        "journal": ["journal", "codex"],
+        "help": ["help", "commands"],
+        "quit": ["quit", "exit"],
+        "save": ["save"],
+        "load": ["load"]
+    }
+    for cmd, synonyms in commands.items():
+        for synonym in synonyms:
+            if user_input.startswith(synonym):
+                return cmd
+    return user_input.split()[0]
+
+############################
+# In-Game Journal Functions
+############################
+
+def add_event(event):
+    game_state["story_log"].append(event)
+
+def display_journal(main_win):
+    main_win.clear()
+    main_win.addstr("=== In-Game Journal ===\n", curses.A_BOLD)
+    if game_state["story_log"]:
+        for event in game_state["story_log"]:
+            main_win.addstr(f" * {event}\n")
+    else:
+        main_win.addstr("No events logged yet.\n")
+    main_win.addstr("\nPress any key to continue...")
+    main_win.refresh()
+    main_win.getch()
+
+############################
+# Sample Scene Functions
+############################
+
+def scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win):
+    game_state["current_scene"] = "ship_deck"
+    add_event("Arrived at the Ship's Deck.")
+    main_win.clear()
+    curses_slow_print(main_win, f"{game_state['name']}, you stand on the weather-beaten deck of 'The Black Meridian'.")
+    curses_slow_print(main_win, "A tattered map and a captain's log hint at secrets of a hidden island fortress.")
+    update_sidebar(sidebar_win)
+    update_header(header_win)
+    update_footer(footer_win)
     
     while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("You observe the lively crew, swaying masts, and the mysterious map that seems to hold a clue to an ancient treasure.")
-        elif cmd in ["sail"]:
-            slow_print("You command the helmsman to set a course into the unknown. The ship lurches forward into the deep blue.")
-            pause()
-            scene_open_sea()
+        user_input = curses_get_input(input_win)
+        cmd = parse_command(user_input.lower().strip())
+        if cmd == "look":
+            curses_slow_print(main_win, "You see a bustling deck with crew members and a mysterious map.")
+        elif cmd == "sail":
+            curses_slow_print(main_win, "You command the helmsman to set sail into the deep blue.")
+            scene_open_sea(header_win, main_win, sidebar_win, input_win, footer_win)
             break
-        elif cmd in ["board"]:
-            slow_print("You decide to venture below deck where whispers of hidden clues and secret meetings stir.")
-            pause()
-            scene_below_deck()
+        elif cmd == "board":
+            curses_slow_print(main_win, "You venture below deck, where whispered secrets abound.")
+            scene_below_deck(header_win, main_win, sidebar_win, input_win, footer_win)
             break
-        elif cmd in ["help"]:
-            help_menu()
-        elif cmd in ["quit", "exit"]:
-            slow_print("The tides recede as you exit the adventure. Farewell, brave pirate!")
-            sys.exit(0)
+        elif cmd == "map":
+            update_sidebar(sidebar_win)
+        elif cmd == "save":
+            msg = save_game()
+            curses_slow_print(main_win, msg)
+        elif cmd == "load":
+            msg = load_game()
+            curses_slow_print(main_win, msg)
+        elif cmd == "journal":
+            display_journal(main_win)
+        elif cmd == "quit":
+            curses_slow_print(main_win, "The tides recede as you exit the adventure. Farewell!")
+            exit(0)
+        elif cmd == "help":
+            display_help_menu(main_win, input_win)
         else:
-            slow_print("Command not recognized. Try 'help' for available commands.")
+            curses_slow_print(main_win, "Command not recognized. Try 'help'.")
 
-
-def scene_below_deck():
-    slow_print("\n--- Below Deck ---")
-    slow_print("The narrow corridors beneath the ship reveal a world of dim lanterns and hushed voices.")
-    slow_print("You find a worn journal containing cryptic notes and sketches of a secret island fortress.")
+def scene_below_deck(header_win, main_win, sidebar_win, input_win, footer_win):
+    game_state["current_scene"] = "below_deck"
+    add_event("Exploring Below Deck.")
+    main_win.clear()
+    curses_slow_print(main_win, "In the cramped corridors beneath the ship, dim lanterns reveal a weathered journal.")
+    update_sidebar(sidebar_win)
+    update_header(header_win)
+    update_footer(footer_win)
     
     while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("The journal's pages detail hidden coves, rival pirate factions, and strange symbols that seem like a map.")
-        elif cmd in ["search", "read"]:
-            slow_print("Decoding the journal's cryptic entries, you learn of an island shrouded in mystery—its fortress guarding unimaginable treasures.")
-            pause()
-            scene_crew_quarters()
+        user_input = curses_get_input(input_win)
+        cmd = parse_command(user_input.lower().strip())
+        if cmd == "look":
+            curses_slow_print(main_win, "The journal details hidden coves and mysterious symbols.")
+        elif cmd == "search":
+            curses_slow_print(main_win, "Decoding the entries, you learn of an island fortress with untold treasures.")
+            add_event("Learned about secret island.")
+            scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win)
             break
-        elif cmd in ["sail"]:
-            slow_print("Believing the clues are sufficient, you hurry back to the deck to set sail towards the island.")
-            pause()
-            scene_open_sea()
+        elif cmd == "sail":
+            curses_slow_print(main_win, "Believing the clues suffice, you return to the deck to set sail.")
+            scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win)
             break
-        elif cmd in ["help"]:
-            help_menu()
-        elif cmd in ["quit", "exit"]:
-            slow_print("Retreating from the secrets below deck, you end your adventure. Farewell!")
-            sys.exit(0)
+        elif cmd == "map":
+            update_sidebar(sidebar_win)
+        elif cmd == "save":
+            msg = save_game()
+            curses_slow_print(main_win, msg)
+        elif cmd == "load":
+            msg = load_game()
+            curses_slow_print(main_win, msg)
+        elif cmd == "journal":
+            display_journal(main_win)
+        elif cmd == "quit":
+            curses_slow_print(main_win, "Retreating from below deck, you end your adventure. Farewell!")
+            exit(0)
+        elif cmd == "help":
+            display_help_menu(main_win, input_win)
         else:
-            slow_print("Command not recognized. Try 'help' for guidance.")
+            curses_slow_print(main_win, "Command not recognized. Try 'help'.")
 
-
-def scene_crew_quarters():
-    slow_print("\n--- Crew Quarters ---")
-    slow_print("In the bustling crew quarters, voices murmur about a mysterious advisor rumored to know the island’s true secrets.")
-    slow_print("A grizzled sailor with a cybernetic eye catches your attention.")
+def scene_open_sea(header_win, main_win, sidebar_win, input_win, footer_win):
+    game_state["current_scene"] = "open_sea"
+    add_event("Sailing on the Open Sea.")
+    main_win.clear()
+    curses_slow_print(main_win, "The ship cuts through restless waves as dark clouds gather overhead.")
+    update_sidebar(sidebar_win)
+    update_header(header_win)
+    update_footer(footer_win)
     
     while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("You notice faded portraits of legendary pirates and a map pinned to the wall with annotated routes.")
-        elif cmd in ["talk", "negotiate"]:
-            slow_print("You approach the sailor, who introduces himself as 'Old Byte'. He offers to share his knowledge—for a price.")
-            slow_print("He speaks of a rival pirate captain who has recently secured part of the treasure map. Do you:")
-            slow_print("  1. Trade some of your own clues for his insights?")
-            slow_print("  2. Threaten him for the information?")
-            choice = input("Choose 1 or 2: ").strip()
-            if choice == "1":
-                slow_print("Old Byte nods and reveals that the map leads to a series of puzzles scattered across the island.")
-                pause()
-                scene_open_sea()
-                break
-            elif choice == "2":
-                slow_print("The sailor recoils in anger and warns you against rash decisions. The mood in the quarters sours.")
-                slow_print("Realizing you might have lost a valuable ally, you decide to return to the deck.")
-                pause()
-                scene_ship_deck()
+        user_input = curses_get_input(input_win)
+        cmd = parse_command(user_input.lower().strip())
+        if cmd == "look":
+            curses_slow_print(main_win, "Turbulent waves and flashes of lightning mirror your inner turmoil.")
+        elif cmd == "sail":
+            curses_slow_print(main_win, "You steer the ship into the heart of the storm. The winds howl!")
+            scene_storm_at_sea(header_win, main_win, sidebar_win, input_win, footer_win)
+            break
+        elif cmd == "map":
+            update_sidebar(sidebar_win)
+        elif cmd == "save":
+            msg = save_game()
+            curses_slow_print(main_win, msg)
+        elif cmd == "load":
+            msg = load_game()
+            curses_slow_print(main_win, msg)
+        elif cmd == "journal":
+            display_journal(main_win)
+        elif cmd == "quit":
+            curses_slow_print(main_win, "Unable to face the storm, you abandon your quest. Farewell!")
+            exit(0)
+        elif cmd == "help":
+            display_help_menu(main_win, input_win)
+        else:
+            curses_slow_print(main_win, "Command not recognized. Try 'help'.")
+
+def scene_storm_at_sea(header_win, main_win, sidebar_win, input_win, footer_win):
+    game_state["current_scene"] = "storm_at_sea"
+    add_event("Endured the Storm at Sea.")
+    main_win.clear()
+    curses_slow_print(main_win, "Rain lashes the deck and thunder shakes the ship. The storm is fierce!")
+    update_sidebar(sidebar_win)
+    update_header(header_win)
+    update_footer(footer_win)
+    
+    while True:
+        user_input = curses_get_input(input_win)
+        cmd = parse_command(user_input.lower().strip())
+        if cmd == "look":
+            curses_slow_print(main_win, "The deck is slippery and the crew scrambles in the tempest.")
+        elif cmd == "fight":
+            curses_slow_print(main_win, "You rally your crew to secure the ship.")
+            if game_state["skills"]["combat"] + random.randint(0, 3) > 6:
+                curses_slow_print(main_win, "Your skill prevails! The storm begins to subside.")
+                add_event("Conquered the storm.")
+                scene_island_approach(header_win, main_win, sidebar_win, input_win, footer_win)
                 break
             else:
-                slow_print("Uncertain, you hesitate and the moment slips away.")
-        elif cmd in ["sail"]:
-            slow_print("You decide not to delay any longer and return to the deck to set sail for the island.")
-            pause()
-            scene_open_sea()
-            break
-        elif cmd in ["help"]:
-            help_menu()
-        elif cmd in ["quit", "exit"]:
-            slow_print("Leaving the crew quarters, you step away from the hidden secrets. Farewell!")
-            sys.exit(0)
-        else:
-            slow_print("Command not recognized. Try 'help' for available commands.")
-
-
-def scene_open_sea():
-    slow_print("\n--- Open Sea ---")
-    slow_print("The ship cuts through the waves as dark clouds gather overhead.")
-    slow_print("A violent storm brews on the horizon, and the whispered promises of treasure drive you onward.")
-    
-    while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("The sea is restless, with turbulent waves and flashes of lightning that mirror your inner conflict.")
-        elif cmd in ["sail"]:
-            slow_print("You steer the ship into the heart of the storm. The winds howl and the deck becomes a chaotic battleground.")
-            pause()
-            scene_storm_at_sea()
-            break
-        elif cmd in ["help"]:
-            help_menu()
-        elif cmd in ["quit", "exit"]:
-            slow_print("Unable to face the storm, you choose to abandon your quest. Farewell!")
-            sys.exit(0)
-        else:
-            slow_print("Command not recognized. Try 'help' to see your options.")
-
-
-def scene_storm_at_sea():
-    slow_print("\n--- Storm at Sea ---")
-    slow_print("Rain lashes the deck and thunder shakes the very timbers of the ship.")
-    slow_print("Amid the chaos, you must make split-second decisions to survive the fury of nature.")
-    
-    while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("The deck is slippery, crew members scramble for safety, and a sense of dread fills the air.")
-        elif cmd in ["fight"]:
-            slow_print("You rally a group of loyal crew to secure the rigging and fend off the chaotic elements.")
-            slow_print("After a grueling struggle, you manage to steady the ship. The storm begins to subside.")
-            pause()
-            scene_island_approach()
-            break
-        elif cmd in ["negotiate", "help"]:
-            slow_print("You shout orders, coordinating the crew to weather the storm through sheer determination.")
-            slow_print("Gradually, your leadership and quick thinking pull everyone to safety as the storm fades.")
-            pause()
-            scene_island_approach()
-            break
-        elif cmd in ["quit", "exit"]:
-            slow_print("The storm proves too much, and you abandon ship. Your adventure ends here.")
-            sys.exit(0)
-        else:
-            slow_print("Command not recognized. In the midst of the tempest, you must act swiftly!")
-
-
-def scene_island_approach():
-    slow_print("\n--- Approach to the Secret Island ---")
-    slow_print("After battling the storm, the skies clear to reveal a blood-red sunset.")
-    slow_print("In the distance, a dark silhouette emerges—a rugged island with steep cliffs and hidden fortifications.")
-    
-    while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("From the deck, you discern cannons, watchtowers, and a network of secret coves etched into the rocky shoreline.")
-        elif cmd in ["board", "land"]:
-            slow_print("You lower the boats and prepare a landing party. The island’s mysteries beckon.")
-            pause()
-            scene_island_forest()
-            break
-        elif cmd in ["sail"]:
-            slow_print("You hesitate, watching the island for further clues, until a sudden flash of light compels you to act.")
-        elif cmd in ["help"]:
-            help_menu()
-        elif cmd in ["quit", "exit"]:
-            slow_print("You decide the island's perils are too great and retreat from the quest. Farewell!")
-            sys.exit(0)
-        else:
-            slow_print("Command not recognized. Try 'help' for available commands.")
-
-
-def scene_island_forest():
-    slow_print("\n--- The Island Jungle ---")
-    slow_print("Stepping onto the island, you find yourself in a dense jungle alive with mysterious sounds and shifting shadows.")
-    slow_print("Ancient stone markers and cryptic carvings hint at a civilization long past—and a treasure yet undiscovered.")
-    
-    while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("Towering trees and tangled undergrowth surround you, with moss-covered relics peeking through.")
-        elif cmd in ["search", "explore"]:
-            slow_print("Venturing deeper, you discover a bifurcation: one path leads to an abandoned village, the other to a rocky outcrop that appears to be a lookout.")
-            slow_print("Do you choose to go to the village (type 'village') or the lookout (type 'lookout')?")
-            choice = input(">> ").lower().strip()
-            if choice == "village":
-                pause()
-                scene_abandoned_village()
+                curses_slow_print(main_win, "The storm takes its toll. You lose 15 health.")
+                game_state["health"] -= 15
+                if game_state["health"] <= 0:
+                    curses_slow_print(main_win, "You have succumbed to the storm...")
+                    exit(0)
+                scene_island_approach(header_win, main_win, sidebar_win, input_win, footer_win)
                 break
-            elif choice == "lookout":
-                pause()
-                scene_lookout()
+        elif cmd == "negotiate":
+            curses_slow_print(main_win, "You shout orders and inspire your crew with a rousing shanty. The tempest abates.")
+            scene_island_approach(header_win, main_win, sidebar_win, input_win, footer_win)
+            break
+        elif cmd == "map":
+            update_sidebar(sidebar_win)
+        elif cmd == "save":
+            msg = save_game()
+            curses_slow_print(main_win, msg)
+        elif cmd == "load":
+            msg = load_game()
+            curses_slow_print(main_win, msg)
+        elif cmd == "quit":
+            curses_slow_print(main_win, "The storm overwhelms you, and you abandon ship. Farewell!")
+            exit(0)
+        elif cmd == "help":
+            display_help_menu(main_win, input_win)
+        else:
+            curses_slow_print(main_win, "Command not recognized. Act swiftly!")
+
+def scene_island_approach(header_win, main_win, sidebar_win, input_win, footer_win):
+    game_state["current_scene"] = "island_approach"
+    add_event("Approaching the Secret Island.")
+    main_win.clear()
+    curses_slow_print(main_win, "After the storm, a blood‑red sunset reveals a rugged island with hidden fortifications.")
+    update_sidebar(sidebar_win)
+    update_header(header_win)
+    update_footer(footer_win)
+    
+    while True:
+        user_input = curses_get_input(input_win)
+        cmd = parse_command(user_input.lower().strip())
+        if cmd == "look":
+            curses_slow_print(main_win, "From the deck, you see cannons, watchtowers, and secret coves carved into the rocks.")
+        elif cmd == "board":
+            curses_slow_print(main_win, "You lower the boats and prepare a landing party.")
+            scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win)
+            break
+        elif cmd == "map":
+            update_sidebar(sidebar_win)
+        elif cmd == "save":
+            msg = save_game()
+            curses_slow_print(main_win, msg)
+        elif cmd == "load":
+            msg = load_game()
+            curses_slow_print(main_win, msg)
+        elif cmd == "quit":
+            curses_slow_print(main_win, "Fearing the island's perils, you retreat. Farewell!")
+            exit(0)
+        elif cmd == "help":
+            display_help_menu(main_win, input_win)
+        else:
+            curses_slow_print(main_win, "Command not recognized. Try 'help'.")
+
+############################
+# Help Menu Display
+############################
+
+def display_help_menu(main_win, input_win):
+    help_text = (
+        "Help / Commands:\n"
+        "  look/examine/view      - Observe your surroundings\n"
+        "  sail/navigate/set course - Set sail to a new destination\n"
+        "  board/enter             - Board a ship or enter a location\n"
+        "  search/read/investigate - Look for clues or treasure\n"
+        "  fight/attack/duel       - Engage in battle\n"
+        "  negotiate/talk/parley   - Parley with others\n"
+        "  unlock/open             - Open a locked door\n"
+        "  map/show map            - Display the ASCII map\n"
+        "  journal/codex           - Show your in-game journal\n"
+        "  save                    - Save your progress\n"
+        "  load                    - Load your progress\n"
+        "  help/commands           - Show this help menu\n"
+        "  quit/exit               - Exit the adventure\n\n"
+        "Press any key to return..."
+    )
+    main_win.clear()
+    curses_slow_print(main_win, help_text, delay=0.02)
+    input_win.clear()
+    input_win.addstr(0, 0, "Press any key to continue...")
+    input_win.refresh()
+    input_win.getch()
+
+############################
+# Main Curses Function
+############################
+
+def curses_main(stdscr):
+    curses.curs_set(0)
+    stdscr.clear()
+    
+    # Show ASCII Intro Movie
+    ascii_intro_movie(stdscr)
+    
+    header_win, main_win, sidebar_win, input_win, footer_win = init_windows(stdscr)
+    
+    while True:
+        # Main Menu Loop
+        header_win.clear()
+        main_menu_items = ["New Game", "Load Game", "Help", "Quit"]
+        selection = 0
+        while True:
+            header_win.clear()
+            height, width = header_win.getmaxyx()
+            title = "Pirate Latitudes: Ultimate Epic Adventure"
+            header_win.addstr(0, (width - len(title)) // 2, title, curses.A_BOLD)
+            for idx, item in enumerate(main_menu_items):
+                x = (width - len(item)) // 2
+                y = 1 + idx
+                if idx == selection:
+                    header_win.attron(curses.A_REVERSE)
+                    header_win.addstr(y, x, item)
+                    header_win.attroff(curses.A_REVERSE)
+                else:
+                    header_win.addstr(y, x, item)
+            header_win.refresh()
+            key = stdscr.getch()
+            if key == curses.KEY_UP:
+                selection = (selection - 1) % len(main_menu_items)
+            elif key == curses.KEY_DOWN:
+                selection = (selection + 1) % len(main_menu_items)
+            elif key in [10, 13]:
                 break
-            else:
-                slow_print("That path is unclear. Choose 'village' or 'lookout'.")
-        elif cmd in ["help"]:
-            help_menu()
-        elif cmd in ["quit", "exit"]:
-            slow_print("The jungle swallows your footsteps as you abandon your quest. Farewell!")
-            sys.exit(0)
-        else:
-            slow_print("Command not recognized. Try 'help' for guidance.")
 
-
-def scene_abandoned_village():
-    slow_print("\n--- Abandoned Village ---")
-    slow_print("You enter a ghostly village where time seems to stand still. Crumbling huts and faded murals depict the island’s storied past.")
-    slow_print("In the center, a stone pedestal holds a fragmented piece of an ancient treasure map.")
-    
-    while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("The murals tell tales of epic sea battles and secret alliances. The pedestal seems to beckon you closer.")
-        elif cmd in ["search", "read"]:
-            slow_print("You carefully piece together the fragments of the map, revealing coordinates and clues to the fortress hidden deep within the island.")
-            pause()
-            scene_rival_encounter()
+        choice = main_menu_items[selection]
+        if choice == "New Game":
+            # Character customization then start at ship deck
+            character_customization(stdscr)
+            scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win)
+        elif choice == "Load Game":
+            msg = load_game()
+            main_win.clear()
+            curses_slow_print(main_win, msg)
+            main_win.addstr("\nPress any key to continue...")
+            main_win.refresh()
+            main_win.getch()
+            scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win)
+        elif choice == "Help":
+            display_help_menu(main_win, input_win)
+        elif choice == "Quit":
+            main_win.clear()
+            main_win.addstr("Farewell, brave pirate!\n")
+            main_win.refresh()
+            time.sleep(2)
             break
-        elif cmd in ["help"]:
-            help_menu()
-        elif cmd in ["quit", "exit"]:
-            slow_print("Haunted by memories of the past, you decide to leave the village behind. Farewell!")
-            sys.exit(0)
-        else:
-            slow_print("Command not recognized. Try 'help' for available commands.")
 
-
-def scene_lookout():
-    slow_print("\n--- Rocky Lookout ---")
-    slow_print("Climbing the rugged outcrop, you reach a natural lookout with a panoramic view of the island.")
-    slow_print("Below, you see a fortified structure surrounded by lush jungles—a potential treasure vault or a trap laid by rival pirates.")
-    
-    while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("The structure is ancient yet formidable. You can almost sense the weight of untold secrets within its walls.")
-        elif cmd in ["search"]:
-            slow_print("You discover a hidden inscription carved into the rock. It warns of betrayal and hints at a secret entrance accessible only by solving a riddle.")
-            slow_print("The riddle reads: 'I am not alive, yet I grow; I don't have lungs, yet I need air; What am I?'")
-            answer = input("Your answer: ").lower().strip()
-            if "fire" in answer:
-                slow_print("Correct! A hidden passage opens behind a curtain of vines.")
-                pause()
-                scene_fortress()
-                break
-            else:
-                slow_print("That is not the answer. The inscription remains silent. Perhaps try again or choose another path.")
-        elif cmd in ["help"]:
-            help_menu()
-        elif cmd in ["quit", "exit"]:
-            slow_print("The isolation of the lookout proves too daunting and you descend in defeat. Farewell!")
-            sys.exit(0)
-        else:
-            slow_print("Command not recognized. Try 'help' for guidance.")
-
-
-def scene_rival_encounter():
-    slow_print("\n--- Rival Pirate Encounter ---")
-    slow_print("As you leave the abandoned village, a sleek, modern skiff appears on the horizon.")
-    slow_print("A notorious rival pirate captain, known as 'Crimson Byte', challenges you for the secrets of the map.")
-    
-    while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("Crimson Byte's crew are armed with futuristic gadgets and a fierce determination to claim the treasure for themselves.")
-        elif cmd in ["fight"]:
-            slow_print("A clash ensues! Amid clashing steel and bursts of digital sparks, you engage in a heated duel.")
-            slow_print("After an intense battle, you defeat Crimson Byte and secure your path forward, though you bear scars as proof of the encounter.")
-            pause()
-            scene_fortress()
-            break
-        elif cmd in ["negotiate"]:
-            slow_print("You attempt a parley with Crimson Byte, offering a share of future riches in exchange for safe passage.")
-            slow_print("After tense negotiations, he begrudgingly agrees to a temporary alliance. But trust is fragile on these waters.")
-            pause()
-            scene_fortress()
-            break
-        elif cmd in ["help"]:
-            help_menu()
-        elif cmd in ["quit", "exit"]:
-            slow_print("Overwhelmed by the confrontation, you decide to retreat. Your adventure ends here.")
-            sys.exit(0)
-        else:
-            slow_print("Command not recognized. Try 'help' for available commands.")
-
-
-def scene_fortress():
-    slow_print("\n--- The Island Fortress ---")
-    slow_print("You arrive at a looming fortress carved into the side of a rugged cliff.")
-    slow_print("Ancient stone walls, partly overgrown with vines, hide secret chambers and traps that have foiled many before you.")
-    
-    while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("You see intricate carvings, locked gates, and a subtle glimmer from behind a heavy door—perhaps the treasure vault lies beyond.")
-        elif cmd in ["unlock"]:
-            slow_print("You examine the door closely and discover it is secured with a complex mechanism.")
-            slow_print("Using clues from the map and inscriptions you gathered, you attempt to unlock it.")
-            pause()
-            slow_print("After a tense few moments, the lock clicks open, revealing a dark passage.")
-            scene_treasure_vault()
-            break
-        elif cmd in ["fight"]:
-            slow_print("Suddenly, defenders of the fortress emerge from hidden alcoves!")
-            slow_print("You engage in a fierce battle. After a challenging fight, you force your way past them.")
-            pause()
-            slow_print("Exhausted but determined, you approach the locked door.")
-        elif cmd in ["help"]:
-            help_menu()
-        elif cmd in ["quit", "exit"]:
-            slow_print("Overcome by the fortress's perils, you decide to abandon your quest. Farewell!")
-            sys.exit(0)
-        else:
-            slow_print("Command not recognized. Try 'help' for available commands.")
-
-
-def scene_treasure_vault():
-    slow_print("\n--- The Treasure Vault ---")
-    slow_print("Beyond the unlocked door, you step into a chamber glittering with riches.")
-    slow_print("Ancient coins, dazzling jewels, and mysterious artifacts fill the vault. But more than wealth, this treasure tells the island’s history.")
-    
-    while True:
-        cmd = input(">> ").lower().strip()
-        if cmd in ["look", "examine"]:
-            slow_print("Every artifact and relic here whispers a tale of epic sea battles, secret alliances, and lost civilizations.")
-        elif cmd in ["search", "read"]:
-            slow_print("Among the treasures, you find a final journal that recounts the legacy of the island and the true meaning behind the treasure.")
-            slow_print("Your name will now be etched in pirate lore as one who unlocked the secrets of the island!")
-            slow_print("Congratulations, brave adventurer, on completing your quest!")
-            pause()
-            scene_final()
-            break
-        elif cmd in ["help"]:
-            help_menu()
-        elif cmd in ["quit", "exit"]:
-            slow_print("Leaving behind the legacy of the treasure vault, you sail into history. Farewell!")
-            sys.exit(0)
-        else:
-            slow_print("Command not recognized. Try 'help' for available commands.")
-
-
-def scene_final():
-    slow_print("\n--- Epilogue ---")
-    slow_print("As the sun rises over the horizon, the island fades into legend.")
-    slow_print("The choices you made and the battles you fought have secured your place among the great pirates of history.")
-    slow_print("Your adventure may end here, but the tales of your exploits will be told for generations to come.")
-    slow_print("Thank you for playing this homage to *Pirate Latitudes* by Michael Crichton!")
-    sys.exit(0)
-
-
-def main():
-    show_intro()
-    help_menu()
-    # Begin the adventure on the ship's deck
-    scene_ship_deck()
-
+    # After game loop, show the ending movie.
+    ascii_ending_movie(stdscr)
 
 if __name__ == "__main__":
-    main()
+    curses.wrapper(curses_main)
