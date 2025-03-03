@@ -8,7 +8,7 @@ This version uses curses to provide:
   - A full-screen ASCII intro movie.
   - A full-screen main menu using stdscr.
   - A multi-panel UI (header, main, sidebar, input, footer) for gameplay.
-  - An ASCII ending movie.
+  - A cancellable ASCII ending movie.
   
 It also includes a unit test suite that verifies (for example) that the command parser
 and journal functions work as expected.
@@ -40,6 +40,14 @@ game_state = {
     "achievements": [],
     "story_log": []
 }
+
+# List of random pirate messages when empty input is detected.
+PIRATE_EMPTY_MESSAGES = [
+    "Arr, speak up, matey!",
+    "Shiver me timbers, where be your words?",
+    "Avast, ye silent landlubber!",
+    "Yo-ho-ho, say something, ye scallywag!"
+]
 
 ############################
 # Curses UI Layout Setup
@@ -110,14 +118,18 @@ def curses_slow_print(win, text, delay=0.05):
     win.refresh()
 
 def curses_get_input(win, prompt=">> "):
-    """Clear the input window, display a prompt, and get user input."""
+    """Clear the input window, display a prompt, and get user input.
+       If the user presses Enter with no input, return a random pirate message."""
     win.clear()
     win.addstr(0, 0, prompt)
     win.refresh()
     curses.echo()
-    inp = win.getstr().decode("utf-8")
+    inp = win.getstr().decode("utf-8").strip()
     curses.noecho()
-    return inp.strip()
+    if not inp:
+        # Return a random pirate message if input is blank.
+        return random.choice(PIRATE_EMPTY_MESSAGES)
+    return inp
 
 ############################
 # ASCII Intro Movie
@@ -178,11 +190,12 @@ r"""
     stdscr.refresh()
 
 ############################
-# ASCII Ending Movie
+# ASCII Ending Movie (Cancellable)
 ############################
 
 def ascii_ending_movie(stdscr):
-    """Display a series of ASCII art frames as an ending movie."""
+    """Display a series of ASCII art frames as an ending movie.
+       If the user presses Enter during the animation, end early."""
     frames = [
 r"""
           _______
@@ -205,6 +218,7 @@ r"""
         ~  ~  ~  ~  ~  ~  ~  ~
 """
     ]
+    stdscr.nodelay(True)  # Enable non-blocking input
     stdscr.clear()
     height, width = stdscr.getmaxyx()
     for frame in frames:
@@ -218,7 +232,14 @@ r"""
             except curses.error:
                 pass
         stdscr.refresh()
-        time.sleep(2)
+        # Wait for 2 seconds or until a key is pressed.
+        for _ in range(20):  # 20 * 0.1 = 2 seconds total
+            key = stdscr.getch()
+            if key != -1:
+                stdscr.nodelay(False)
+                return
+            time.sleep(0.1)
+    stdscr.nodelay(False)
     stdscr.clear()
     try:
         stdscr.addstr(height//2, (width-20)//2, "Thank you for playing!")
@@ -257,25 +278,25 @@ def load_game():
 
 def parse_command(user_input):
     """
-    Parse a natural language command by checking if any synonym is present in the input.
-    Specific multi-word cases (like "read map" or "take map") are handled first.
+    Parse a natural language command by checking for command synonyms anywhere in the input.
+    Special cases ("read map", "take map") are handled first.
     """
     user_input = user_input.lower().strip()
     if not user_input:
         return ""
     
-    # Handle special multi-word commands explicitly.
+    # Handle specific multi-word commands explicitly.
     if "read map" in user_input or "take map" in user_input:
         return "map"
     
-    # Define an ordered list of commands by priority.
+    # Ordered list: higher priority commands come first.
     ordered_commands = [
         ("map", ["map", "show map"]),
         ("journal", ["journal", "codex"]),
         ("look", ["look", "examine", "view"]),
         ("sail", ["sail", "navigate", "set course"]),
         ("board", ["board", "enter"]),
-        ("search", ["search", "investigate", "read"]),  # Note: "read" might be ambiguous, but after "map" it is lower priority.
+        ("search", ["search", "investigate", "read"]),
         ("fight", ["fight", "attack", "duel"]),
         ("negotiate", ["negotiate", "talk", "parley"]),
         ("unlock", ["unlock", "open"]),
@@ -288,8 +309,9 @@ def parse_command(user_input):
         for synonym in synonyms:
             if synonym in user_input:
                 return command
-    # Fallback: return the first word
-    return user_input.split()[0]
+    # Fallback: return the first word.
+    parts = user_input.split()
+    return parts[0] if parts else ""
 
 ############################
 # In-Game Journal Functions
@@ -692,7 +714,6 @@ class TestCommandParser(unittest.TestCase):
         self.assertEqual(parse_command("enter cabin"), "board")
     
     def test_search_commands(self):
-        # "read journal" should be interpreted as search, unless map commands override.
         self.assertEqual(parse_command("search for clues"), "search")
         self.assertEqual(parse_command("read journal"), "search")
     
