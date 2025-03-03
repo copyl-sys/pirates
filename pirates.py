@@ -6,7 +6,7 @@ All rights to the original text and story belong to Michael Crichton and his est
 
 This version uses curses to provide:
   - A full-screen ASCII intro movie.
-  - A full-screen main menu.
+  - A full-screen main menu using stdscr.
   - A multi-panel UI (header, main, sidebar, input, footer) for gameplay.
   - An ASCII ending movie.
 """
@@ -39,7 +39,6 @@ game_state = {
 def init_windows(stdscr):
     """Divide the screen into header, main, sidebar, input, and footer windows."""
     height, width = stdscr.getmaxyx()
-    
     header_height = 3
     input_height = 3
     footer_height = 1
@@ -163,7 +162,6 @@ r"""
             try:
                 stdscr.addstr(start_y + i, x, line)
             except curses.error:
-                # In case the terminal is too small, ignore the error.
                 pass
         stdscr.refresh()
         time.sleep(2)
@@ -476,7 +474,6 @@ def scene_island_approach(header_win, main_win, sidebar_win, input_win, footer_w
             curses_slow_print(main_win, "From the deck, you see cannons, watchtowers, and secret coves carved into the rocks.")
         elif cmd == "board":
             curses_slow_print(main_win, "You lower the boats and prepare a landing party.")
-            # For demonstration, return to ship deck after island approach.
             scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win)
             break
         elif cmd == "map":
@@ -571,7 +568,7 @@ def curses_main(stdscr):
     # Show ASCII Intro Movie
     ascii_intro_movie(stdscr)
     
-    # Display the full-screen main menu using stdscr
+    # Full-screen main menu using stdscr
     stdscr.clear()
     height, width = stdscr.getmaxyx()
     menu_items = ["New Game", "Load Game", "Help", "Quit"]
@@ -630,22 +627,25 @@ def curses_main(stdscr):
         stdscr.addstr(2, 2, help_text)
         stdscr.refresh()
         stdscr.getch()
+        # Return to main menu
+        curses_main(stdscr)
+        return
     elif choice == "Quit":
         stdscr.clear()
-        stdscr.addstr(height//2, (width-20)//2, "Farewell, brave pirate!")
+        stdscr.addstr(height//2, (width - 20) // 2, "Farewell, brave pirate!")
         stdscr.refresh()
         time.sleep(2)
         return
 
-    # After main menu, initialize game windows
+    # After the main menu, initialize game panels.
     header_win, main_win, sidebar_win, input_win, footer_win = init_windows(stdscr)
     
-    # Start the game at the ship deck
+    # Start the game at the ship deck.
     scene_ship_deck(header_win, main_win, sidebar_win, input_win, footer_win)
     
-    # (Game loop continues with your scenes here...)
+    # (Game loop would continue through scenes...)
     
-    # When the game ends, show the ASCII Ending Movie.
+    # When game ends, show the ASCII Ending Movie.
     ascii_ending_movie(stdscr)
 
 if __name__ == "__main__":
