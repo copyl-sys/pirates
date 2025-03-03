@@ -9,6 +9,7 @@ This version uses curses to provide:
   - A full-screen main menu using stdscr.
   - A multi-panel UI (header, main, sidebar, input, footer) for gameplay.
   - A cancellable ASCII ending movie.
+  - Auto-complete of dialog animations if any key is pressed.
   
 It also includes a unit test suite that verifies (for example) that the command parser
 and journal functions work as expected.
@@ -23,6 +24,7 @@ import time
 import json
 import os
 import random
+import re
 import sys
 import signal
 import unittest
@@ -41,7 +43,7 @@ game_state = {
     "story_log": []
 }
 
-# List of random pirate messages when empty input is detected.
+# Random pirate phrases for empty input
 PIRATE_EMPTY_MESSAGES = [
     "Arr, speak up, matey!",
     "Shiver me timbers, where be your words?",
@@ -108,18 +110,42 @@ def update_sidebar(sidebar_win):
     sidebar_win.box()
     sidebar_win.refresh()
 
+############################
+# Enhanced Slow Print with Auto-Complete
+############################
+
 def curses_slow_print(win, text, delay=0.05):
-    """Print text slowly (character-by-character) in the given window."""
-    for ch in text:
-        win.addstr(ch)
+    """
+    Print text slowly (character-by-character) in the given window.
+    If any key is pressed during printing, auto-complete the rest of the text immediately.
+    """
+    # Set window to non-blocking mode
+    win.nodelay(True)
+    for i, ch in enumerate(text):
+        try:
+            win.addstr(ch)
+        except curses.error:
+            pass
         win.refresh()
+        # Check if a key was pressed; if so, print the remainder instantly.
+        if win.getch() != -1:
+            remaining = text[i+1:]
+            try:
+                win.addstr(remaining)
+            except curses.error:
+                pass
+            win.refresh()
+            break
         time.sleep(delay)
     win.addstr("\n")
     win.refresh()
+    win.nodelay(False)
 
 def curses_get_input(win, prompt=">> "):
-    """Clear the input window, display a prompt, and get user input.
-       If the user presses Enter with no input, return a random pirate message."""
+    """
+    Clear the input window, display a prompt, and get user input.
+    If the user presses Enter with no input, return a random pirate phrase.
+    """
     win.clear()
     win.addstr(0, 0, prompt)
     win.refresh()
@@ -127,7 +153,6 @@ def curses_get_input(win, prompt=">> "):
     inp = win.getstr().decode("utf-8").strip()
     curses.noecho()
     if not inp:
-        # Return a random pirate message if input is blank.
         return random.choice(PIRATE_EMPTY_MESSAGES)
     return inp
 
@@ -194,8 +219,10 @@ r"""
 ############################
 
 def ascii_ending_movie(stdscr):
-    """Display a series of ASCII art frames as an ending movie.
-       If the user presses Enter during the animation, end early."""
+    """
+    Display a series of ASCII art frames as an ending movie.
+    If any key is pressed during the animation, end the movie early.
+    """
     frames = [
 r"""
           _______
@@ -232,10 +259,9 @@ r"""
             except curses.error:
                 pass
         stdscr.refresh()
-        # Wait for 2 seconds or until a key is pressed.
-        for _ in range(20):  # 20 * 0.1 = 2 seconds total
-            key = stdscr.getch()
-            if key != -1:
+        # Wait for 2 seconds or break early if any key is pressed.
+        for _ in range(20):
+            if stdscr.getch() != -1:
                 stdscr.nodelay(False)
                 return
             time.sleep(0.1)
@@ -285,8 +311,8 @@ def parse_command(user_input):
     if not user_input:
         return ""
     
-    # Handle specific multi-word commands explicitly.
-    if "read map" in user_input or "take map" in user_input:
+    # Special multi-word commands for map.
+    if re.search(r'\b(read|take)\s+map\b', user_input):
         return "map"
     
     # Ordered list: higher priority commands come first.
@@ -307,7 +333,8 @@ def parse_command(user_input):
     ]
     for command, synonyms in ordered_commands:
         for synonym in synonyms:
-            if synonym in user_input:
+            pattern = r'\b' + re.escape(synonym) + r'\b'
+            if re.search(pattern, user_input):
                 return command
     # Fallback: return the first word.
     parts = user_input.split()
