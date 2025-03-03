@@ -247,6 +247,8 @@ def load_game():
 ############################
 
 def parse_command(user_input):
+    if not user_input:
+        return ""
     commands = {
         "look": ["look", "examine", "view"],
         "sail": ["sail", "navigate", "set course"],
@@ -266,7 +268,8 @@ def parse_command(user_input):
         for synonym in synonyms:
             if user_input.startswith(synonym):
                 return cmd
-    return user_input.split()[0]
+    parts = user_input.split()
+    return parts[0] if parts else ""
 
 ############################
 # In-Game Journal Functions
@@ -627,7 +630,6 @@ def curses_main(stdscr):
         stdscr.addstr(2, 2, help_text)
         stdscr.refresh()
         stdscr.getch()
-        # Return to main menu
         curses_main(stdscr)
         return
     elif choice == "Quit":
@@ -637,7 +639,7 @@ def curses_main(stdscr):
         time.sleep(2)
         return
 
-    # After the main menu, initialize game panels.
+    # After main menu, initialize game panels.
     header_win, main_win, sidebar_win, input_win, footer_win = init_windows(stdscr)
     
     # Start the game at the ship deck.
