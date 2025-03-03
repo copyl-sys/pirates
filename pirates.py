@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Pirate Latitudes: Ultimate Curses Enhanced Epic Adventure with ASCII Movies and Extended UI
+Pirate Latitudes: Ultimate Curses Enhanced Epic Adventure with ASCII Movies, Extended UI, and Unit Tests
 Inspired by *Pirate Latitudes* by Michael Crichton.
 All rights to the original text and story belong to Michael Crichton and his estate.
 
@@ -9,6 +9,13 @@ This version uses curses to provide:
   - A full-screen main menu using stdscr.
   - A multi-panel UI (header, main, sidebar, input, footer) for gameplay.
   - An ASCII ending movie.
+  
+It also includes a unit test suite that verifies (for example) that the command parser
+and journal functions work as expected.
+
+Usage:
+    python3 pirates.py        # to run the game
+    python3 pirates.py test   # to run the unit tests
 """
 
 import curses
@@ -16,7 +23,9 @@ import time
 import json
 import os
 import random
+import sys
 import signal
+import unittest
 
 SAVE_FILE = "pirate_latitudes_save.json"
 
@@ -650,5 +659,84 @@ def curses_main(stdscr):
     # When game ends, show the ASCII Ending Movie.
     ascii_ending_movie(stdscr)
 
+############################
+# Unit Tests
+############################
+
+class TestCommandParser(unittest.TestCase):
+    def test_empty_input(self):
+        self.assertEqual(parse_command(""), "")
+    
+    def test_look_commands(self):
+        self.assertEqual(parse_command("look around"), "look")
+        self.assertEqual(parse_command("examine the map"), "look")
+        self.assertEqual(parse_command("view"), "look")
+    
+    def test_sail_commands(self):
+        self.assertEqual(parse_command("sail north"), "sail")
+        self.assertEqual(parse_command("navigate quickly"), "sail")
+    
+    def test_board_commands(self):
+        self.assertEqual(parse_command("board the ship"), "board")
+        self.assertEqual(parse_command("enter cabin"), "board")
+    
+    def test_search_commands(self):
+        self.assertEqual(parse_command("search for clues"), "search")
+        self.assertEqual(parse_command("read journal"), "search")
+    
+    def test_fight_commands(self):
+        self.assertEqual(parse_command("fight them"), "fight")
+        self.assertEqual(parse_command("attack enemy"), "fight")
+    
+    def test_negotiate_commands(self):
+        self.assertEqual(parse_command("negotiate peace"), "negotiate")
+        self.assertEqual(parse_command("talk to captain"), "negotiate")
+    
+    def test_unlock_commands(self):
+        self.assertEqual(parse_command("unlock door"), "unlock")
+        self.assertEqual(parse_command("open chest"), "unlock")
+    
+    def test_map_commands(self):
+        self.assertEqual(parse_command("map"), "map")
+        self.assertEqual(parse_command("show map please"), "map")
+    
+    def test_journal_commands(self):
+        self.assertEqual(parse_command("journal"), "journal")
+        self.assertEqual(parse_command("codex entries"), "journal")
+    
+    def test_help_commands(self):
+        self.assertEqual(parse_command("help"), "help")
+        self.assertEqual(parse_command("commands"), "help")
+    
+    def test_quit_commands(self):
+        self.assertEqual(parse_command("quit"), "quit")
+        self.assertEqual(parse_command("exit now"), "quit")
+    
+    def test_save_commands(self):
+        self.assertEqual(parse_command("save game"), "save")
+    
+    def test_load_commands(self):
+        self.assertEqual(parse_command("load game"), "load")
+    
+    def test_unknown_command(self):
+        # Should return the first word if not recognized.
+        self.assertEqual(parse_command("foobar test"), "foobar")
+
+class TestJournalFunctions(unittest.TestCase):
+    def test_add_event(self):
+        initial_len = len(game_state["story_log"])
+        add_event("Test Event")
+        self.assertEqual(len(game_state["story_log"]), initial_len + 1)
+        self.assertEqual(game_state["story_log"][-1], "Test Event")
+
+############################
+# Main Entry Point
+############################
+
 if __name__ == "__main__":
-    curses.wrapper(curses_main)
+    # If "test" is passed as an argument, run the unit tests.
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        sys.argv.pop(1)
+        unittest.main()
+    else:
+        curses.wrapper(curses_main)
