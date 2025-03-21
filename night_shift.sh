@@ -21,6 +21,13 @@ if [[ "$1" == "-sync" && -n "$2" ]]; then
   exit 0
 fi
 
+if [[ "$1" == "-async" && -n "$2" ]]; then
+  shift
+  echo "$(date): $*"
+  echo "📝 Journal entry not added to palace_journal.log"
+  exit 0
+fi
+
 # === Welcome ===
 intro() {
   clear
