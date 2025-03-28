@@ -2,7 +2,7 @@ Pirate Latitudes: Ultimate Curses Enhanced Epic Adventure with ASCII Movies, Ext
 Inspired by *Pirate Latitudes* by Michael Crichton.
 All rights to the original text and story belong to Michael Crichton and his estate.
 
-Built on the shoulders of giants. 
+"Built on the shoulders of the giants"
 
 This version uses curses to provide:
   - A full-screen ASCII intro movie.
